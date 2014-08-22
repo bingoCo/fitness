@@ -1,0 +1,132 @@
+  
+---
+title: "What predict the best of the specified execution of the exercise?"
+output: html_document
+---
+##Step 1.1: organize the data: removing the NAs
+  we check on summary(pml_train) and locate all the variabls with huge numbers of NAs, and remove them.
+```{r,results='hide'}
+pml_train <- read.csv("pml-training.csv")
+pml_test <- read.csv("pml-testing.csv")
+summary(pml_train)
+vars.for.removed = c(17:36,50:59,75:83,93:94,96:97,99:101,103:112,127,131:132,134:135,137:138,141:150)
+pml_trainNARM <- pml_train[,-vars.for.removed]
+pml_testNARM <- pml_test[,-vars.for.removed]
+```
+
+##Step 1.2: organize the data: 
+  then use describe() to locate variables with very low sd of even equal to zero for the whole set of data
+```{r,results='hide',message=FALSE}
+library(psych)
+des <- data.frame(describe(pml_trainNARM))
+vars.for.removed.sd2=c(2:6,12:16,39:44,48:55,69:76)
+pml_trainRM2 <- pml_trainNARM[,-vars.for.removed.sd2]
+pml_testRM2 <- pml_testNARM[,-vars.for.removed.sd2]
+```
+
+
+## step 2: split the pml_train 
+   to train and test data sets for further analysis
+```{r,results='hide',message=FALSE}
+library(caret)
+inTrain <- createDataPartition(y=pml_trainRM2$classe,
+                              p=0.7, list=FALSE)
+training <- pml_trainRM2[inTrain,]
+testing <- pml_trainRM2[-inTrain,]
+```
+##step 3: fit the model with rpart with all the left variables
+```{r,message=FALSE}
+library(e1071)
+modFit <- train(classe ~ .,method="rpart",data=training)
+print(modFit$finalModel)
+```
+
+
+##step 4: draw the plot of the model we fit
+  the plot shows X being the most important predictor
+```{r,eval=FALSE,message=FALSE}
+library(rattle)
+fancyRpartPlot(modFit$finalModel)
+```
+
+##step 5: predict the test set (the one splited from pml_train)
+  By using rpart, we get an accuracy rate of 0.6616822
+```{r}
+modFitPred <-predict(modFit,newdata=testing)
+table(modFitPred,testing$classe)
+accucacy= (1674+1138+1082)/nrow(testing)
+```
+
+```{r}
+accucacy
+modFitPredsmall <-predict(modFit,newdata=pml_testRM2 )
+```
+
+
+##step 6.1:  Fit the model according the the cv trained
+  we have 0.22 largest cp with smallest variance
+```{r,message=FALSE}
+library(caret)
+set.seed(111)
+fitControl = trainControl( method = "cv", number = 10 )
+cartGrid = expand.grid( .cp = (1:50)*0.01) 
+train(classe ~ . , data = training, method = "rpart",
+trControl = fitControl, tuneGrid = cartGrid )
+exerciseTREECV = rpart(classe ~ ., data = training, 
+control=rpart.control(cp = 0.22))
+```
+
+##step 6.2: predict the accuracy using model trained with cv
+  we get an accuracy of 0.9994902, much higher than the previous raw model.
+```{r}
+modFitPred <-predict(exerciseTREECV,newdata=testing,type ="class")
+table(modFitPred,testing$classe)
+accucacy= (1674+1138+1026+962+1082)/nrow(testing) 
+```
+```{r}
+accucacy 
+modFitPredsmall <-predict(modFit,newdata=pml_testRM2 )
+```
+
+
+
+##step 7.1: fit randomForest model 
+  From the importance function, we conclude that "X" is the most important variable in deciding the correctness of the posture, second by num_window,roll_belt,yaw_belt and pitch_belt. This model make a prediction as good as the cv model. 
+```{r,results='hide',message=FALSE}
+library(randomForest)
+exerciseForest = randomForest(classe ~ ., data = training,imiportance=TRUE,na.action=na.omit,mtry=3)
+round(importance(exerciseForest),2)
+```
+
+```{r}
+round(importance(exerciseForest),2)
+```
+
+
+##step 7.2 predict the testing dataset outcome
+```{r}
+PredictForest = predict(exerciseForest, newdata = testing)
+table(testing$classe, PredictForest)
+accuracy= (1674+1138+1025+963+1082)/nrow(testing)
+```
+```{r}
+accuracy
+PredictForest = predict(exerciseForest, newdata = pml_test)
+```
+
+
+
+
+##Fig.1. prp plot of general rpart model
+```{r,echo=FALSE,message=FALSE}
+library(rattle)
+fancyRpartPlot(modFit$finalModel)
+```
+
+ 
+
+ 
+##Fig.2. prp plot of the cv model
+```{r,echo=FALSE,message=FALSE}
+prp(exerciseTREECV)
+```
